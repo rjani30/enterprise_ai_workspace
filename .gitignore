@@ -1,0 +1,7 @@
+# Ignore training data and model artifacts
+*.jsonl
+trained_model_adapter/
+__pycache__/
+.DS_Store
+.venv/
+.env

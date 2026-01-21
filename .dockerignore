@@ -1,0 +1,5 @@
+# Exclude from Docker build context
+.git/
+.gitignore
+trained_model_adapter/
+*.jsonl

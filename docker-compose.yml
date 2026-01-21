@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  # --- Service 1: The AI Engine (Inference) ---
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-engine
+    ports:
+      - "11434:11434" # Maps host port to container port
+    volumes:
+      # Map your existing Mac models to the container to avoid re-downloading
+      - ~/.ollama:/root/.ollama 
+    restart: unless-stopped
+
+  # --- Service 2: The SAS-to-Snowflake Web Interface ---
+  converter-ui:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: sas-converter-ui
+    ports:
+      - "8501:8501" # Default Streamlit port
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    depends_on:
+      - ollama # Ensures the engine starts before the UI
+    volumes:
+      - .:/app # Bind mount to see code changes in real-time
+    restart: always
+
+  # --- Service 3: The Local Fine-Tuning Module ---
+  unsloth-trainer:
+    build:
+      context: .
+      dockerfile: Dockerfile # Use the same environment or a specific training one
+    container_name: training-node
+    profiles:
+      - training # This service only runs when explicitly called
+    volumes:
+      - ./training_data:/workspace/data
+      - ./outputs:/workspace/outputs
