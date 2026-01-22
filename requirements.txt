@@ -2,3 +2,4 @@ streamlit
 ollama
 pandas
 requests
+pypdf
