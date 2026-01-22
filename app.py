@@ -5,90 +5,116 @@ import sys
 import os
 import time
 
-# --- 1. MODEL GUIDE DEFINITION ---
-# Mapping model names to their specific expertises
+# --- 1. MODEL GUIDE & CONFIG ---
 MODEL_GUIDE = {
-    "deepseek-coder-v2:16b": "🏗️ **Heavyweight Coder**: Best for complex SAS/SAP to Snowflake migrations. High accuracy but slower.",
-    "deepseek-coder:6.7b": "⚡ **Fast Coder**: Good for mid-sized ETL logic and routine SQL debugging. Balanced speed.",
-    "llama3.2:3b": "💬 **General Assistant**: Excellent for general technical questions, documentation, and simple chat.",
-    "sqlcoder:7b": "🔍 **SQL Specialist**: Specifically tuned for advanced Snowflake SQL generation and schema optimization.",
-    "deepseek-r1:7b": "🧠 **Reasoning Expert**: Best for troubleshooting complex logic errors or explaining step-by-step migrations."
+    "deepseek-coder-v2:16b": "🏗️ **Heavyweight Coder**: Best for complex migrations. High accuracy.",
+    "deepseek-coder:6.7b": "⚡ **Fast Coder**: Good for mid-sized logic and SQL debugging.",
+    "llama3.2:3b": "💬 **General Assistant**: Best for general questions and chat memory.",
+    "sqlcoder:7b": "🔍 **SQL Specialist**: Specifically tuned for Snowflake SQL."
 }
 
-# --- 2. PAGE CONFIGURATION ---
 st.set_page_config(page_title="Enterprise AI Workspace", page_icon="🤖", layout="wide")
 
-# --- 3. SIDEBAR: DYNAMIC SELECTOR & DESCRIPTIONS ---
+# Initialize Chat History if it doesn't exist
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
+# --- 2. SIDEBAR ---
 with st.sidebar:
     st.title("Settings & Status")
     
     st.subheader("Model Selection")
     try:
         response = requests.get("http://ollama:11434/api/tags")
-        if response.status_code == 200:
-            models_data = response.json().get('models', [])
-            available_models = [m['name'] for m in models_data]
-        else:
-            available_models = ["deepseek-coder-v2:16b"]
-    except Exception:
+        available_models = [m['name'] for m in response.json().get('models', [])] if response.status_code == 200 else ["deepseek-coder-v2:16b"]
+    except:
         available_models = ["deepseek-coder-v2:16b"]
-        st.error("Connecting to Ollama engine...")
-
+    
     selected_model = st.selectbox("Choose an Active Model", options=available_models)
+    st.info(MODEL_GUIDE.get(selected_model, "🌐 **General Purpose**"))
 
-    # Display Description based on Selection
-    description = MODEL_GUIDE.get(selected_model, "🌐 **General Purpose**: A standard model for various AI tasks.")
-    st.info(description)
+    # --- NEW: MAX HISTORY SLIDER ---
+    st.divider()
+    st.subheader("Memory Tuning")
+    max_history = st.slider(
+        "Max Context History", 
+        min_value=1, 
+        max_value=20, 
+        value=5, 
+        help="How many previous messages the AI should remember. Higher values use more CPU/RAM."
+    )
+    
+    if st.button("🗑️ Clear Chat Context"):
+        st.session_state.chat_history = []
+        st.rerun()
 
     st.divider()
-
+    
     # Training Monitor
-    st.subheader("Training Monitor")
     if 'training_proc' in st.session_state:
+        st.subheader("Training Monitor")
         ret_code = st.session_state.training_proc.poll()
-        if ret_code is None:
-            st.warning("⏳ Training in Progress...")
-        elif ret_code == 0:
-            st.success("✅ Training Complete!")
-            if st.button("Clear Notification"):
-                del st.session_state.training_proc
-                st.rerun()
-        else:
-            st.error(f"❌ Training Failed (Code: {ret_code})")
-    else:
-        st.write("No active tasks.")
+        if ret_code is None: st.warning("⏳ Training in Progress...")
+        elif ret_code == 0: st.success("✅ Training Complete!")
+        else: st.error(f"❌ Failed (Code: {ret_code})")
 
-# --- 4. MAIN INTERFACE ---
+# --- 3. MAIN INTERFACE ---
 st.title("Enterprise AI Workspace")
 tab1, tab2 = st.tabs(["💬 General Assistant", "🚀 Expert Trainer"])
 
 with tab1:
-    st.header(f"Working with {selected_model}")
-    user_prompt = st.text_area("Input Area:", height=300, placeholder="Paste your SAS/SAP code here...")
-
-    if st.button("Send to AI Engine"):
-        if user_prompt.strip():
-            with st.spinner("Processing..."):
-                try:
-                    resp = requests.post(
-                        "http://ollama:11434/api/generate",
-                        json={"model": selected_model, "prompt": user_prompt, "stream": False},
-                        timeout=120
-                    )
-                    if resp.status_code == 200:
-                        st.subheader("AI Response:")
-                        st.markdown(resp.json().get("response"))
-                except Exception as e:
-                    st.error(f"Connection Error: {e}")
-
-with tab2:
-    st.header("Custom Fine-Tuning")
-    dataset = st.file_uploader("Upload .jsonl Dataset", type=["jsonl"])
-    is_training = 'training_proc' in st.session_state and st.session_state.training_proc.poll() is None
+    st.header(f"Conversing with {selected_model}")
     
-    if st.button("🚀 Start Local Fine-Tuning", disabled=is_training):
-        if dataset is not None:
-            with open("train_data.jsonl", "wb") as f:
-                f.write(dataset.getbuffer())
-            st.session_state.training_proc = subprocess.Popen([sys.executable, "finetune.py"])
-            st.rerun()
+    # Display previous messages
+    for message in st.session_state.chat_history:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    user_input = st.chat_input("Ask a follow-up or provide new code...")
+
+    if user_input:
+        with st.chat_message("user"):
+            st.markdown(user_input)
+        
+        st.session_state.chat_history.append({"role": "user", "content": user_input})
+        
+        # --- LOGIC: SLICE HISTORY BASED ON SLIDER ---
+        # We take the last 'max_history * 2' entries to account for User + AI pairs
+        context_window = st.session_state.chat_history[-(max_history * 2):]
+        full_context = "\n".join([f"{m['role']}: {m['content']}" for m in context_window])
+        
+        placeholder = st.empty()
+        start_time = time.perf_counter()
+        loading_gif = "https://i.gifer.com/ZZ5H.gif" 
+        placeholder.image(loading_gif, caption=f"Thinking with last {max_history} exchanges...", width=100)
+        
+        try:
+            resp = requests.post(
+                "http://ollama:11434/api/generate",
+                json={
+                    "model": selected_model, 
+                    "prompt": full_context,
+                    "stream": False
+                },
+                timeout=300
+            )
+            
+            end_time = time.perf_counter()
+            execution_time = end_time - start_time
+            
+            if resp.status_code == 200:
+                placeholder.empty()
+                ai_response = resp.json().get("response")
+                
+                with st.chat_message("assistant"):
+                    st.markdown(ai_response)
+                
+                st.session_state.chat_history.append({"role": "assistant", "content": ai_response})
+                st.caption(f"⏱️ Context-aware response in **{execution_time:.2f} seconds**")
+            else:
+                placeholder.empty()
+                st.error(f"Engine Error: {resp.status_code}")
+                    
+        except Exception as e:
+            placeholder.empty()
+            st.error(f"Connection Error: {e}")
