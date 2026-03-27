@@ -1,0 +1,12 @@
+tables:
+  - name: readings
+    description: "Contains hourly electricity consumption data."
+    synonyms: ["power usage", "electricity consumed", "kwh", "load"]
+    columns:
+      - name: usage_kwh
+        description: "Energy consumed in kilowatt-hours."
+  - name: meters
+    description: "Metadata about the physical smart meters and customer owners."
+    relationships:
+      - to_table: readings
+        on: meter_id

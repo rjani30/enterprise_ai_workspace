@@ -20,6 +20,7 @@ services:
     container_name: sas-converter-ui
     ports:
       - "8501:8501" # Default Streamlit port
+      - "8502:8502"
     environment:
       - OLLAMA_HOST=http://ollama:11434
     depends_on:
@@ -39,3 +40,16 @@ services:
     volumes:
       - ./training_data:/workspace/data
       - ./outputs:/workspace/outputs
+
+  # --- Service 4: The PostgresSQL Database Setup ---
+  db:
+    image: postgres:15
+    container_name: smart_meter_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: smart_meter_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql # Auto-populates on startup
